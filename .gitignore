@@ -1,0 +1,34 @@
+.playwright-mcp/
+
+# Local secrets and per-machine configuration
+.env
+.env.*
+!.env.example
+opencode.json
+.vscode/
+start-debug.bat
+test_markers.ps1
+desktop/config-lipsync.txt
+
+# Electron profile, temporary files, logs, and diagnostics
+**/userdata/
+**/userdata_test/
+**/.tts-tmp/
+**/.ide-tmp/
+**/vendor/
+**/*.log
+desktop/state.json
+desktop/screenshots/
+desktop/start_test_out.txt
+
+# Local investigation artifacts and patch fragments
+00/
+scan*.txt
+replacement_*.txt
+apply_*.cjs
+fix_*.js
+fix_*.cjs
+desktop/tmp_*
+
+# Duplicate avatar model copies; root models are the runtime assets
+desktop/assets/sarra7*.vrm

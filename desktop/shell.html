@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sarra — avatar</title>
+<style>
+  html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent !important;
+  }
+  #app {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color-scheme: normal;
+  }
+  #btn-screen1 {
+    position: fixed;
+    z-index: 50;
+    bottom: 24px;
+    right: 24px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(54, 82, 217, 0.92);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,.35);
+    border-radius: 24px;
+    padding: 8px 14px;
+    font: 600 12px/1 Figtree, system-ui, sans-serif;
+    cursor: pointer;
+    box-shadow: 0 8px 24px rgba(0,0,0,.35);
+    backdrop-filter: blur(6px);
+    user-select: none;
+  }
+  #btn-screen1:hover {
+    filter: brightness(1.15);
+    border-color: rgba(255,255,255,.6);
+  }
+  #screen-result {
+    position: fixed;
+    z-index: 49;
+    right: 24px;
+    bottom: 64px;
+    width: min(360px, calc(100vw - 48px));
+    max-height: 36vh;
+    overflow: auto;
+    padding: 12px 14px;
+    border: 1px solid rgba(255,255,255,.2);
+    border-radius: 8px;
+    background: rgba(12, 14, 18, .94);
+    color: #f5f6f7;
+    font: 13px/1.45 Figtree, system-ui, sans-serif;
+    white-space: pre-wrap;
+    box-shadow: 0 8px 24px rgba(0,0,0,.35);
+  }
+  #screen-result[hidden] { display: none; }
+</style>
+</head>
+<body>
+<!-- La fenêtre de l'UI est une iframe : elle ne contient que l'avatar.
+     Le panneau Réglages vit dans une autre fenêtre (Ctrl+Shift+K). -->
+<iframe id="app" title="Avatar Sarra"
+        allow="microphone; camera; autoplay; clipboard-write; display-capture"></iframe>
+<button id="btn-screen1" title="Screen 1 — Capturer l’écran">👁️ Screen 1</button>
+<div id="screen-result" role="status" aria-live="polite" hidden></div>
+<script>
+  // Pont entre l'iframe (même origine) et l'API exposée par preload.js.
+  // L'application appelle window.parent.__sarraBridge depuis l'iframe.
+  (function () {
+    const api = window.sarraDesktop;
+    const bus = typeof BroadcastChannel === 'function'
+      ? new BroadcastChannel('sarra-shell')
+      : null;
+    window.__sarraBridge = {
+      voices: api ? api.voices : [],
+      speak: (payload) => (api ? api.speak(payload) : Promise.resolve(false)),
+      ttsAudio: (payload) => (api ? api.ttsAudio(payload) : Promise.resolve({ ok: false, error: 'bridge indisponible' })),
+      testApiKey: (payload) => (api ? api.testApiKey(payload) : Promise.resolve({ ok: false, message: 'bridge indisponible' })),
+      generateResponse: (payload) => (api ? api.generateResponse(payload) : Promise.resolve({ ok: false, error: 'bridge indisponible' })),
+      transcribeAudio: (payload) => (api ? api.transcribeAudio(payload) : Promise.resolve({ ok: false, error: 'bridge indisponible' })),
+      liveStart: (payload) => (api ? api.liveStart(payload) : Promise.resolve({ ok: false, error: 'bridge indisponible' })),
+      liveAudio: (payload) => api && api.liveAudio(payload),
+      liveAudioEnd: (payload) => api && api.liveAudioEnd(payload),
+      liveText: (payload) => api && api.liveText(payload),
+      liveStop: (payload) => api && api.liveStop(payload),
+      onLiveEvent: (callback) => api && api.onLiveEvent(callback),
+      offLiveEvent: (callback) => api && api.offLiveEvent(callback),
+      openExternal: (url) => api && api.openExternal(url),
+      stop: () => api && api.stop(),
+      onTtsEvent: (callback) => api && api.onTtsEvent(callback),
+      offTtsEvent: (callback) => api && api.offTtsEvent(callback),
+      dragStart: (point) => api && api.dragStart(point),
+      dragMove: (point) => api && api.dragMove(point),
+      dragEnd: () => api && api.dragEnd(),
+      resizeAvatar: (size) => api && api.resizeAvatar(size),
+      repositionAvatar: () => api && api.repositionAvatar(),
+      resizeSettings: (size) => api && api.resizeSettings(size),
+      showMenu: () => api && api.showMenu(),
+      toggleSettings: () => api && api.toggleSettings(),
+      closeSettings: () => api && api.closeSettings(),
+      onVrmLoad: (callback) => api && api.onVrmLoad(callback),
+      onAiToken: (callback) => api && api.onAiToken && api.onAiToken(callback),
+      vrmLoaded: (payload) => api && api.vrmLoaded(payload),
+    };
+    const frame = document.getElementById('app');
+    frame.src = location.origin + '/?shell=avatar';
+
+    // Screen 1 demande la capture à Sarra Studio via le canal commun.
+    const btn = document.getElementById('btn-screen1');
+    const resultBox = document.getElementById('screen-result');
+    const desktopApi = window.sarraDesktop;
+    let activeCaptureId = null;
+    let captureTimer = null;
+
+    async function analyzeCapture(message) {
+      if (!message || message.type !== 'screen-capture-result' ||
+          message.requestId !== activeCaptureId) return;
+      clearTimeout(captureTimer);
+      captureTimer = null;
+      try {
+        if (!message.ok || !message.capture || !message.capture.base64) {
+          throw new Error(message.error || 'La capture d’écran a échoué.');
+        }
+        let keys = {};
+        try { keys = JSON.parse(localStorage.getItem('sarra.apiKeys') || '{}'); } catch (_error) { /* ignore */ }
+        const key = String(keys.gemini || '').trim();
+        if (!key) throw new Error('Ajoute la clé Gemini dans Réglages avant de demander une analyse.');
+        const editorCode = String(message.editorCode || '').trim().slice(0, 16000);
+        const prompt = 'Voici mon écran actuel. Analyse cette capture et donne-moi une aide concise sur ce que tu observes.' +
+          (editorCode ? '\n\nContexte discret de l’éditeur Monaco (Python) :\n```python\n' + editorCode + '\n```' : '');
+        const directive = localStorage.getItem('sarra.coreDirectives') ||
+          'Tu es Sarra, une assistante virtuelle amicale et serviable. Analyse la capture reçue.';
+        const response = await desktopApi.generateResponse({
+          provider: 'gemini',
+          key,
+          prompt,
+          directive,
+          imageBase64: message.capture.base64,
+          imageMimeType: message.capture.mimeType || 'image/png',
+        });
+        if (!response || !response.ok || !String(response.text || '').trim()) {
+          throw new Error(response && response.error || 'Gemini n’a renvoyé aucune analyse.');
+        }
+        resultBox.textContent = response.text.trim();
+      } catch (error) {
+        resultBox.textContent = error.message || String(error);
+      } finally {
+        activeCaptureId = null;
+        btn.disabled = false;
+        btn.textContent = '👁️ Screen 1';
+      }
+    }
+
+    if (bus) bus.onmessage = (event) => { analyzeCapture(event && event.data); };
+    if (btn && resultBox && desktopApi && desktopApi.generateResponse && bus) {
+      btn.addEventListener('click', async () => {
+        let keys = {};
+        try { keys = JSON.parse(localStorage.getItem('sarra.apiKeys') || '{}'); } catch (_error) { /* ignore */ }
+        if (!String(keys.gemini || '').trim()) {
+          resultBox.hidden = false;
+          resultBox.textContent = 'Ajoute la clé Gemini dans Réglages avant de demander une analyse.';
+          return;
+        }
+        btn.disabled = true;
+        btn.textContent = 'Analyse…';
+        resultBox.hidden = false;
+        resultBox.textContent = 'Capture, contexte IDE et analyse en cours…';
+        activeCaptureId = 'capture-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+        captureTimer = setTimeout(() => {
+          activeCaptureId = null;
+          btn.disabled = false;
+          btn.textContent = '👁️ Screen 1';
+          resultBox.textContent = 'Sarra Studio ne répond pas à la demande de capture.';
+        }, 15000);
+        bus.postMessage({ type: 'trigger-screen-capture', requestId: activeCaptureId });
+      });
+    }
+  })();
+</script>
+</body>
+</html>

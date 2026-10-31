@@ -1,0 +1,8 @@
+{
+  "name": "sarra-overlay",
+  "productName": "Sarra Avatar",
+  "version": "2.0.0",
+  "description": "Overlay flottant transparent de l'avatar Sarra (iframe) + panneau Réglages dans une fenêtre séparée, toujours au-dessus des autres fenêtres.",
+  "main": "main.js",
+  "private": true
+}

@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sarra — Espace de développement (IDE)</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg:#10131a;
+    --panel:#171b24;
+    --ac:#4665e8;
+    --tx:#e6eaf0;
+    --mu:#98a2b3;
+    --ln:#2b3240;
+    --terminal:#050608;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      color-scheme: light;
+      --bg:#e6eaf0;
+      --panel:#f5f7fa;
+      --ac:#3652d9;
+      --tx:#10131a;
+      --mu:#596273;
+      --ln:#c8ced8;
+      --terminal:#050608;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #root { height: 100%; width: 100%; }
+  body { background: var(--bg); color: var(--tx); font: 13px/1.4 "Segoe UI", system-ui, sans-serif; overflow: hidden; }
+  #root { display: flex; flex-direction: column; }
+  .bar { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: var(--panel); border-bottom: 1px solid var(--ln); flex-shrink: 0; user-select: none; }
+  .bar strong { margin-right: auto; font-size: 13px; white-space: nowrap; }
+  #status { min-width: 120px; text-align: right; font-size: 11px; color: var(--mu); }
+  button { min-height: 32px; background: var(--ac); color: #fff; border: none; border-radius: 5px; padding: 6px 11px; font: inherit; cursor: pointer; font-weight: 600; font-size: 12px; white-space: nowrap; }
+  button:hover:not(:disabled) { filter: brightness(1.1); }
+  button:focus-visible { outline: 2px solid #78a1ff; outline-offset: 2px; }
+  button:disabled { cursor: wait; opacity: .65; }
+  button.secondary { background: transparent; color: var(--tx); border: 1px solid var(--ln); }
+  button.danger { background: #842d35; color: #fff; }
+  #workspace { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+  #split { display: flex; flex: 1; min-height: 0; overflow: hidden; flex-direction: column; }
+  #editor { flex: 1 1 70%; min-height: 160px; }
+  #terminal-wrap { flex: 0 0 30%; min-height: 120px; display: flex; flex-direction: column; border-top: 1px solid var(--ln); background: var(--terminal); }
+  .term-header { min-height: 34px; padding: 5px 10px; border-bottom: 1px solid #262a31; font-size: 11px; font-weight: 700; color: #c9ccd2; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+  #terminal { flex: 1; overflow: auto; padding: 10px 12px; font: 12px/1.45 Consolas, "Courier New", monospace; color: #c9ccd2; background: var(--terminal); }
+  .log { white-space: pre-wrap; word-break: break-word; margin: 0 0 6px 0; border-left: 3px solid transparent; padding-left: 8px; }
+  .log.stdout { border-left-color: #2e7d5c; color: #a8d8a8; }
+  .log.stderr { border-left-color: #9e2b25; color: #f4a7a7; }
+  .log.system { border-left-color: var(--ac); color: #9fb3ff; font-style: italic; }
+  .log.err { color: #ff8a80; }
+  .muted { color: var(--mu); font-size: 11px; }
+  .monaco-scrollable-bars > .scrollbar { visibility: visible !important; }
+  #chat-panel { display: flex; flex: 0 0 310px; min-width: 260px; flex-direction: column; border-left: 1px solid var(--ln); background: var(--panel); }
+  .chat-header { padding: 12px 14px; border-bottom: 1px solid var(--ln); }
+  .chat-header strong { display: block; font-size: 13px; }
+  .chat-header span { display: block; margin-top: 3px; color: var(--mu); font-size: 11px; }
+  #chat-messages { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 10px; overflow: auto; padding: 14px 12px; }
+  .chat-message { max-width: 94%; padding: 9px 11px; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .chat-message .speaker { margin-bottom: 4px; font-size: 10px; font-weight: 700; opacity: .8; }
+  .chat-message .message-text { font-size: 12px; line-height: 1.5; }
+  .chat-message.user { align-self: flex-end; background: #34445c; color: #edf3fb; }
+  .chat-message.sarra { align-self: flex-start; background: #302d40; color: #eeeaf8; }
+  @media (prefers-color-scheme: light) {
+    .chat-message.user { background: #dce5f2; color: #172234; }
+    .chat-message.sarra { background: #e8e4f2; color: #241f34; }
+  }
+  #chat-form { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-top: 1px solid var(--ln); }
+  #chat-input { width: 100%; min-height: 72px; max-height: 160px; resize: vertical; padding: 9px 10px; border: 1px solid var(--ln); border-radius: 6px; outline: none; background: var(--bg); color: var(--tx); font: inherit; font-size: 12px; }
+  #chat-input:focus { border-color: var(--ac); }
+  #chat-send { align-self: flex-end; min-width: 92px; }
+  #capture-preview[hidden] { display: none; }
+  #capture-preview {
+    position: fixed;
+    z-index: 20;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 18px;
+    background: rgba(5, 6, 8, .94);
+  }
+  .preview-header { display: flex; align-items: center; gap: 12px; color: #e6eaf0; }
+  .preview-header strong { margin-right: auto; }
+  #capture-image { display: block; max-width: 100%; max-height: calc(100vh - 84px); margin: 0 auto; object-fit: contain; }
+  @media (max-width: 760px) {
+    .bar { flex-wrap: wrap; }
+    .bar strong { flex: 1 0 40%; }
+    #status { order: 2; flex: 1 0 100%; text-align: left; }
+    #editor { min-height: 180px; }
+    #terminal-wrap { flex-basis: 34%; }
+    #chat-panel { flex-basis: 270px; min-width: 240px; }
+  }
+</style>
+</head>
+<body>
+<div id="root">
+  <div class="bar">
+    <strong>Sarra Studio</strong>
+    <span id="status" class="muted">Prêt</span>
+    <button id="btnRun" type="button">▶️ Exécuter le code</button>
+    <button class="danger" id="btnStop" type="button">⏹️ Arrêter</button>
+    <button class="secondary" id="btnCapture" type="button">📷 Screen 1 (Capturer l'écran)</button>
+    <button class="secondary" id="btnClear" type="button">🧹 Effacer le terminal</button>
+  </div>
+  <div id="workspace">
+    <div id="split">
+      <div id="editor"></div>
+      <div id="terminal-wrap">
+        <div class="term-header">TERMINAL <span id="terminal-state">Sortie du script</span></div>
+        <div id="terminal" role="log" aria-live="polite"></div>
+      </div>
+    </div>
+    <aside id="chat-panel" aria-label="Discussion avec Sarra">
+      <div class="chat-header">
+        <strong>Discussion avec Sarra</strong>
+        <span>Gemini Flash · contexte Monaco inclus</span>
+      </div>
+      <div id="chat-messages" role="log" aria-live="polite" aria-relevant="additions text">
+        <article class="chat-message sarra"><div class="speaker">Sarra</div><div class="message-text">Bonjour. Pose ta question sur le code en cours.</div></article>
+      </div>
+      <form id="chat-form">
+        <textarea id="chat-input" rows="3" maxlength="3000" placeholder="Écris à Sarra…" aria-label="Message à Sarra"></textarea>
+        <button id="chat-send" type="submit">Envoyer</button>
+      </form>
+    </aside>
+  </div>
+</div>
+<div id="capture-preview" role="dialog" aria-modal="true" aria-label="Capture d’écran" hidden>
+  <div class="preview-header">
+    <strong>Capture d’écran</strong>
+    <span id="capture-path" class="muted"></span>
+    <button class="secondary" id="close-capture" type="button">Fermer</button>
+  </div>
+  <img id="capture-image" alt="Capture d’écran du bureau">
+</div>
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs/loader.js"></script>
+<script>
+(function () {
+  const api = window.sarraDesktop;
+  if (!api) {
+    console.error('IDE : pont Electron indisponible (sarraDesktop manquant).');
+    return;
+  }
+
+  const $ = (id) => document.getElementById(id);
+  const terminal = $('terminal');
+  const status = $('status');
+  const capturePreview = $('capture-preview');
+  const captureImage = $('capture-image');
+
+  function appendLog(stream, text) {
+    const lines = String(text || '').split(/\r?\n/);
+    for (const line of lines) {
+      if (line === '') continue;
+      const div = document.createElement('div');
+      div.className = 'log ' + stream;
+      div.textContent = line;
+      terminal.appendChild(div);
+    }
+    terminal.scrollTop = terminal.scrollHeight;
+  }
+
+  function setStatus(text) {
+    if (status) status.textContent = text;
+  }
+
+  function clearTerminal() {
+    terminal.innerHTML = '';
+  }
+
+  let editor = null;
+  let pendingCode = null;
+  let resolveEditorReady;
+  const editorReady = new Promise((resolve) => { resolveEditorReady = resolve; });
+  const bus = typeof BroadcastChannel === 'function'
+    ? new BroadcastChannel('sarra-shell')
+    : null;
+
+  function injectCode(code) {
+    const value = String(code || '');
+    if (!value.trim()) return;
+    if (!window.editor) {
+      pendingCode = value;
+      return;
+    }
+    window.editor.setValue(value);
+    appendLog('system', '[Studio] Code Python reçu depuis Sarra.');
+    setStatus('Code reçu · prêt à exécuter');
+  }
+
+  async function captureForAvatar(requestId) {
+    setStatus('Capture Screen 1 en cours…');
+    try {
+      await Promise.race([editorReady, new Promise((resolve) => setTimeout(resolve, 2000))]);
+      const result = await api.captureScreen();
+      if (!result || !result.ok || !result.base64) {
+        throw new Error(result && result.error || 'Capture d’écran indisponible.');
+      }
+      const code = window.editor ? window.editor.getValue().slice(0, 16000) : '';
+      const sizeKb = Math.round(((result.base64.length * 3) / 4) / 1024);
+      appendLog('system', '[Vision] Capture Windows reçue (' + sizeKb + ' Ko).');
+      setStatus('Capture transmise à Sarra');
+      if (bus && requestId) {
+        bus.postMessage({
+          type: 'screen-capture-result',
+          requestId,
+          ok: true,
+          capture: {
+            base64: result.base64,
+            mimeType: result.mimeType || 'image/png',
+            path: result.path || '',
+          },
+          editorCode: code,
+        });
+      }
+    } catch (error) {
+      const message = error.message || String(error);
+      appendLog('stderr', '[Vision] ' + message);
+      setStatus('Échec de la capture');
+      if (bus && requestId) bus.postMessage({ type: 'screen-capture-result', requestId, ok: false, error: message });
+    }
+  }
+
+  if (bus) {
+    bus.onmessage = (event) => {
+      const message = event && event.data;
+      if (!message || typeof message !== 'object') return;
+      if (message.type === 'ide-inject-code') injectCode(message.code);
+      else if (message.type === 'trigger-screen-capture') captureForAvatar(message.requestId);
+    };
+  }
+
+  require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs' } });
+  require(['vs/editor/editor.main'], function () {
+    window.editor = monaco.editor.create($('editor'), {
+      value: '# Écris ton script Python ici\nimport sys\nprint("Sarra Studio prêt.")\n',
+      language: 'python',
+      theme: 'vs-dark',
+      automaticLayout: true,
+      fontSize: 13,
+      lineNumbers: 'on',
+      minimap: { enabled: true },
+      wordWrap: 'on',
+      folding: true,
+    });
+    editor = window.editor;
+    if (pendingCode !== null) {
+      window.editor.setValue(pendingCode);
+      pendingCode = null;
+    }
+    resolveEditorReady(window.editor);
+    setStatus('Monaco prêt · exécution Python isolée');
+  }, function (err) {
+    resolveEditorReady(null);
+    setStatus('Erreur de chargement Monaco Editor (CDN).');
+    console.error('Monaco load error', err);
+  });
+
+  // Répond aux demandes de contenu de l’IA (sarra:ide-poll-content).
+  api.ideOnPollContent(function () {
+    return editor ? editor.getValue() : '';
+  });
+
+  // Logs temps réel du subprocess (sarra:ide-log).
+  api.onIdeLog(function (entry) {
+    appendLog((entry && entry.stream) || 'system', (entry && entry.text) || '');
+    setStatus((entry && entry.stream === 'stderr') ? 'Sortie stderr / erreur' : 'Exécution en cours…');
+  });
+
+  api.onScreenCaptured(function (capture) {
+    if (!capture || !capture.base64) return;
+    captureImage.src = 'data:' + (capture.mimeType || 'image/png') + ';base64,' + capture.base64;
+    $('capture-path').textContent = capture.path || '';
+    capturePreview.hidden = false;
+    setStatus('Capture reçue · aperçu affiché');
+  });
+
+  const chatForm = $('chat-form');
+  const chatInput = $('chat-input');
+  const chatMessages = $('chat-messages');
+  const chatHistory = [];
+  let chatBusy = false;
+
+  function addChatMessage(role, text) {
+    const bubble = document.createElement('article');
+    bubble.className = 'chat-message ' + (role === 'user' ? 'user' : 'sarra');
+    const speaker = document.createElement('div');
+    speaker.className = 'speaker';
+    speaker.textContent = role === 'user' ? 'Vous' : 'Sarra';
+    const content = document.createElement('div');
+    content.className = 'message-text';
+    content.textContent = String(text || '');
+    bubble.append(speaker, content);
+    chatMessages.appendChild(bubble);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    return bubble;
+  }
+
+  function pythonBlock(text) {
+    const blocks = [...String(text || '').matchAll(/```(?:python|py)\s*\r?\n([\s\S]*?)```/gi)];
+    return blocks.length ? String(blocks[blocks.length - 1][1] || '').trim() : '';
+  }
+
+  async function sendChatMessage(event) {
+    if (event) event.preventDefault();
+    const message = chatInput.value.trim();
+    if (!message || chatBusy) return;
+
+    addChatMessage('user', message);
+    const history = chatHistory.slice(-10);
+    chatHistory.push({ role: 'user', content: message });
+    chatInput.value = '';
+    chatBusy = true;
+    $('chat-send').disabled = true;
+    const pending = addChatMessage('assistant', 'Sarra écrit…');
+
+    try {
+      let keys = {};
+      try { keys = JSON.parse(localStorage.getItem('sarra.apiKeys') || '{}'); } catch (_error) { /* ignore */ }
+      const key = String(keys.gemini || '').trim();
+      if (!key) throw new Error('Ajoute une clé Gemini dans Réglages pour démarrer la discussion.');
+      if (typeof api.ideChatMessage !== 'function') throw new Error('Le canal de messagerie IDE est indisponible.');
+
+      const result = await api.ideChatMessage({
+        key,
+        message,
+        editorContext: editor ? editor.getValue().slice(0, 16000) : '',
+        history,
+      });
+      if (!result || !result.ok || !String(result.text || '').trim()) {
+        throw new Error(result && result.error || 'Sarra n’a pas renvoyé de réponse.');
+      }
+      const reply = result.text.trim();
+      pending.querySelector('.message-text').textContent = reply;
+      chatHistory.push({ role: 'assistant', content: reply });
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+      const code = pythonBlock(reply);
+      if (code) injectCode(code);
+    } catch (error) {
+      pending.querySelector('.message-text').textContent = error.message || String(error);
+    } finally {
+      chatBusy = false;
+      $('chat-send').disabled = false;
+      chatInput.focus();
+    }
+  }
+
+  chatForm.addEventListener('submit', sendChatMessage);
+  chatInput.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter' && !event.shiftKey) sendChatMessage(event);
+  });
+
+  $('close-capture').addEventListener('click', function () {
+    capturePreview.hidden = true;
+    captureImage.removeAttribute('src');
+  });
+
+  $('btnRun').addEventListener('click', function () {
+    if (!editor) return;
+    const code = editor.getValue();
+    clearTerminal();
+    setStatus('Envoi du script à l’hôte Python isolé…');
+    $('terminal-state').textContent = 'Exécution en cours';
+    api.executeIdeCode(code).then(function (result) {
+      if (result && result.ok) {
+        setStatus('Script lancé · PID ' + (result.pid || '?'));
+      } else {
+        setStatus('Échec : ' + (result && result.error || 'inconnu'));
+        appendLog('stderr', '[IDE] ' + (result && result.error || 'Erreur inconnue'));
+        $('terminal-state').textContent = 'Échec';
+      }
+    }).catch(function (error) {
+      setStatus('Erreur IPC : ' + error.message);
+      appendLog('stderr', '[IDE IPC] ' + error.message);
+    });
+  });
+
+  $('btnCapture').addEventListener('click', async function () {
+    setStatus('Capture d’écran en cours…');
+    try {
+      const result = await api.captureScreen();
+      if (result && result.ok) {
+        const ko = Math.round(((result.base64 || '').length * 3) / 4 / 1024);
+        setStatus('Capture OK : ' + result.path);
+        appendLog('system', '[Vision] Écran capturé → ' + result.path + ' (' + ko + ' Ko)');
+      } else {
+        setStatus('Échec : ' + (result && result.error || 'inconnu'));
+        appendLog('stderr', '[Vision] ' + (result && result.error || 'Erreur inconnue'));
+      }
+    } catch (error) {
+      setStatus('Erreur : ' + error.message);
+      appendLog('stderr', '[Vision IPC] ' + error.message);
+    }
+  });
+
+  $('btnClear').addEventListener('click', clearTerminal);
+
+  $('btnStop').addEventListener('click', async function () {
+    try {
+      const result = await api.ideStop();
+      if (result && result.ok) setStatus('Arrêt du script demandé.');
+      else setStatus((result && result.error) || 'Aucun script en cours.');
+    } catch (error) {
+      setStatus('Erreur lors de l’arrêt : ' + (error.message || String(error)));
+    }
+  });
+
+  window.addEventListener('resize', function () { if (editor) editor.layout(); });
+})();
+</script>
+</body>
+</html>

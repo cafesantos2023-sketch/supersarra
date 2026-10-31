@@ -1,0 +1,10 @@
+{
+  "name": "sarraclaud-decisions-helper",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Native HTTP helper for the OpenAI Decisions API shape sent to the Experiential gateway (gpt-6-luna-decisions). Decision helper only — no chat completions.",
+  "scripts": {
+    "test": "node --test decisions.test.js"
+  },
+  "engines": { "node": ">=20" }
+}
